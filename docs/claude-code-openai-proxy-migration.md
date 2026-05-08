@@ -434,6 +434,87 @@ Claude Code interactive session using ANTHROPIC_BASE_URL
 Claude Code tool workflow that reads/writes a small file
 ```
 
+## SGLang Kimi-K2.6 Smoke Result
+
+The first real local-provider smoke was run through the VS Code Claude Code
+extension against an SGLang OpenAI-compatible server:
+
+```dotenv
+OPENAI_COMPATIBLE_BASE_URL="http://10.10.0.3:8000/v1"
+OPENAI_COMPATIBLE_API_KEY="local"
+MODEL="openai_compatible/Kimi-K2.6"
+ANTHROPIC_AUTH_TOKEN="freecc"
+MESSAGING_PLATFORM="none"
+ENABLE_MODEL_THINKING=true
+```
+
+The SGLang `/v1/models` endpoint returned the model id as `Kimi-K2.6`; the id is
+case-sensitive and must match the `MODEL` suffix exactly. Starting the proxy with
+`openai_compatible/kimi-k2.6` failed startup validation as a missing model.
+
+The proxy was started with:
+
+```bash
+uv run uvicorn server:app --host 0.0.0.0 --port 8082
+```
+
+The VS Code Claude Code extension was configured to use:
+
+```text
+ANTHROPIC_BASE_URL=http://localhost:8082
+ANTHROPIC_AUTH_TOKEN=freecc
+CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1
+```
+
+Observed working behavior:
+
+- Basic text request streamed normally through Anthropic SSE.
+- Thinking/reasoning content appeared in the Claude Code UI.
+- `Write` created `sglang_test.txt` with `hello from sglang`.
+- `Read` read `sglang_test.txt` and the model verified the file contents.
+- `Bash` ran `ls -la sglang_demo` after file creation.
+- A multi-tool workflow created `sglang_demo/README.md` and
+  `sglang_demo/config.yml`, listed the directory, and summarized the results.
+- Tool outputs were replayed into the next model turn correctly, validating the
+  `tool_use` / `tool_result` to OpenAI `tool_calls` / `tool` history path.
+
+Common setup failures from the smoke:
+
+- `401 Unauthorized` from the proxy means Claude Code's `ANTHROPIC_AUTH_TOKEN`
+  did not match the proxy's configured token, or Claude Code did not receive the
+  token in its environment.
+- `Configured model validation failed ... problem=missing model` means
+  `MODEL` does not match an id from the upstream `/v1/models` response.
+- `Configured model validation failed ... NVIDIA_NIM_API_KEY is not set` means
+  `MODEL` was still pointing at the default `nvidia_nim/...` route.
+
+This smoke establishes the current baseline for the lightweight extraction:
+text streaming, thinking display, file write/read, shell execution, and multi-turn
+tool-result replay must remain green before removing the surrounding project
+machinery.
+
+## Next Migration Slice
+
+With SGLang Kimi-K2.6 validated in the existing project, the next slice should
+start extracting a smaller service boundary rather than adding more provider
+surface area here.
+
+Recommended next steps:
+
+1. Create a new lightweight project or package skeleton with only FastAPI,
+   settings, Anthropic request models, request conversion, SSE streaming, and an
+   OpenAI-compatible client.
+2. Port the minimum proven pieces: `SSEBuilder`, `map_stop_reason`,
+   `AnthropicToOpenAIConverter`, the OpenAI stream loop, and simple auth header
+   compatibility.
+3. Recreate the SGLang smoke above as the acceptance checklist for the new
+   project.
+4. Add optional feature flags for local-model compatibility, starting with
+   thinking replay and `parallel_tool_calls=false`.
+5. Defer image/vision support until a concrete multimodal model test is needed;
+   the current OpenAI chat conversion path intentionally rejects Anthropic image
+   blocks.
+
 ## Recommended Borrow List
 
 Borrow conceptually or directly:
